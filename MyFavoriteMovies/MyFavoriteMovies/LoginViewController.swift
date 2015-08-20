@@ -111,11 +111,12 @@ class LoginViewController: UIViewController {
         
         /* 1. Set the parameters */
         let methodParameters = [
-            "key": "value"
+            "api_key":self.appDelegate.apiKey
         ]
         
         /* 2. Build the URL */
-        let urlString = "BUILD_THE_URL" + appDelegate.escapedParameters(methodParameters)
+        let urlString = self.appDelegate.baseURLSecureString + "authentication/token/new" + appDelegate.escapedParameters(methodParameters)
+        
         let url = NSURL(string: urlString)!
         
         /* 3. Configure the request */
@@ -126,15 +127,23 @@ class LoginViewController: UIViewController {
         let task = session.dataTaskWithRequest(request) { data, response, downloadError in
             
             if let error = downloadError {
-                println("getRequestToken: Print an error message")
+                dispatch_async(dispatch_get_main_queue()){
+                    self.debugTextLabel.text = "Login Failed. (Request Token)."
+                }
+                
             } else {
                 
                 /* 5. Parse the data */
-                println("getRequestToken: Parse the data")
+                let parsedResponse = NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.AllowFragments, error: nil) as! NSDictionary
                 
                 /* 6. Use the data! */
-                println("getRequestToken: Use the data")
-                
+                if let requestToken = parsedResponse["request_token"] as? String{
+                    self.appDelegate.requestToken = requestToken
+                    self.loginWithToken(requestToken)
+                }
+                else{
+                    self.debugTextLabel.text = "Error parsing request token"
+                }
             }
         }
         
@@ -146,36 +155,133 @@ class LoginViewController: UIViewController {
         
         /* TASK: Login, then get a session id */
         /* 1. Set the parameters */
+        let username = self.usernameTextField.text
+        let password = self.passwordTextField.text
+        let api_key  = self.appDelegate.apiKey
+        
+        let requestParameters = ["username":username,
+        "password":password,"api_key":api_key,"request_token": requestToken]
+        
         /* 2. Build the URL */
+        let urlString = self.appDelegate.baseURLSecureString + "authentication/token/validate_with_login" + self.appDelegate.escapedParameters(requestParameters)
+        let url = NSURL(string:urlString)!
+        
         /* 3. Configure the request */
+        let request = NSMutableURLRequest(URL: url)
+        request.addValue("application/json", forHTTPHeaderField: "Accept")
+        
         /* 4. Make the request */
-        /* 5. Parse the data */
-        /* 6. Use the data! */
+        let task    = self.session.dataTaskWithRequest(request){data, response, error in
+            if let error = error {
+                dispatch_async(dispatch_get_main_queue()){
+                    self.debugTextLabel.text = "Login Failed. (loginWithToken)."
+                }
+            }
+            else {
+                /* 5. Parse the data */
+                let parsedData = NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.AllowFragments,error: nil) as! NSDictionary
+                
+                /* 6. Use the data! */
+                if let success = parsedData["success"] as? Bool {
+                    self.getSessionID(requestToken)
+                }
+                else{
+                    dispatch_async(dispatch_get_main_queue()){
+                        let convertedResponse = response as! NSHTTPURLResponse
+                        let statusCode = convertedResponse.statusCode
+                        self.debugTextLabel.text = "Login Failed. Status Code \(statusCode)"
+                    }
+                }
+            }
+        }
+        
         /* 7. Start the request */
+        task.resume()
     }
     
     func getSessionID(requestToken: String) {
         
         /* TASK: Get a session ID, then store it (appDelegate.sessionID) and get the user's id */
         /* 1. Set the parameters */
+        let requestParameters = ["api_key": self.appDelegate.apiKey, "request_token": requestToken]
+        
         /* 2. Build the URL */
+        let urlString   = self.appDelegate.baseURLSecureString + "authentication/session/new" + self.appDelegate.escapedParameters(requestParameters)
+        let url         = NSURL(string: urlString)!
+        
         /* 3. Configure the request */
+        let request     = NSMutableURLRequest(URL: url)
+        request.addValue("application/json", forHTTPHeaderField: "Accept")
+        
         /* 4. Make the request */
-        /* 5. Parse the data */
-        /* 6. Use the data! */
+        let task = session.dataTaskWithRequest(request){data, response, downloadError in
+            if let error = downloadError{
+                dispatch_async(dispatch_get_main_queue()){
+                    self.debugTextLabel.text = "Login Failed. (getSessionID)."
+                }
+            }
+            else{
+                /* 5. Parse the data */
+                let parsedData = NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.AllowFragments, error: nil) as! NSDictionary
+                
+                /* 6. Use the data! */
+                if let sessionID = parsedData["session_id"] as? String{
+                    dispatch_async(dispatch_get_main_queue()){
+                        self.appDelegate.sessionID = sessionID
+                        self.getUserID(sessionID)
+                    }
+                }
+                else{
+                    dispatch_async(dispatch_get_main_queue()){
+                        self.debugTextLabel.text = "Login Failed. "
+                    }
+                }
+            }
+        }
         /* 7. Start the request */
+        task.resume()
     }
     
     func getUserID(session_id : String) {
         
         /* TASK: Get the user's ID, then store it (appDelegate.userID) for future use and go to next view! */
         /* 1. Set the parameters */
+        let requestParameters = ["api_key":self.appDelegate.apiKey, "session_id":session_id]
+        
         /* 2. Build the URL */
+        let urlString = self.appDelegate.baseURLSecureString + "account" + self.appDelegate.escapedParameters(requestParameters)
+        let url = NSURL(string: urlString)!
+        
         /* 3. Configure the request */
+        let request = NSMutableURLRequest(URL: url)
+        request.addValue("application/json", forHTTPHeaderField: "Accept")
+        
         /* 4. Make the request */
-        /* 5. Parse the data */
-        /* 6. Use the data! */
+        let task = session.dataTaskWithRequest(request){data,response,downloadError in
+            if let error = downloadError{
+                dispatch_async(dispatch_get_main_queue()){
+                    self.debugTextLabel.text = "Login Failed. (Could not retreive user ID)"
+                }
+            }
+            else{
+                /* 5. Parse the data */
+                let parsedData = NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.AllowFragments, error: nil) as! NSDictionary
+                /* 6. Use the data! */
+                if let userID = parsedData["id"] as? Int{
+                    dispatch_async(dispatch_get_main_queue()){
+                        self.debugTextLabel.text = "Login Successful!"
+                        self.appDelegate.userID  = userID
+                        self.completeLogin()
+                    }
+                }
+                else{
+                    println("something went wrong...")
+                }
+            }
+        }
+
         /* 7. Start the request */
+        task.resume()
     }
 }
 
